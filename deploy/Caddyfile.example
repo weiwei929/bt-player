@@ -1,0 +1,21 @@
+bt.example.com {
+    encode gzip
+
+    # 静态前端（按实际构建产物目录调整）
+    root * /opt/bt-player/dist
+    file_server
+
+    # 建议使用 caddy hash-password 生成
+    @protected path /api/* /stream/*
+    basic_auth @protected {
+        admin REPLACE_WITH_BCRYPT_HASH
+    }
+
+    reverse_proxy /api/* 127.0.0.1:9528
+    reverse_proxy /stream/* 127.0.0.1:9527
+
+    log {
+        output file /var/log/caddy/bt-player-access.log
+        format json
+    }
+}

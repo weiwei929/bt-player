@@ -1,0 +1,10 @@
+[Unit]
+Description=Run BT-Player cache guard periodically
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=10min
+Unit=bt-player-cache-guard.service
+
+[Install]
+WantedBy=timers.target

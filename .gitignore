@@ -1,0 +1,10 @@
+/target/
+src-tauri/target/
+bt_cache/
+.phase0b-secrets.txt
+.env*
+.env
+*.pdb
+Cargo.lock
+node_modules/
+dist/

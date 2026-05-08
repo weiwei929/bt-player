@@ -1,0 +1,12 @@
+[Unit]
+Description=BT-Player cache guard (one-shot)
+After=bt-player.service
+
+[Service]
+Type=oneshot
+User=btplayer
+Group=btplayer
+Environment=BT_PLAYER_CACHE_DIR=/var/lib/btplayer/cache
+Environment=BT_PLAYER_CACHE_MAX_GIB=5
+Environment=BT_PLAYER_CACHE_FLOOR_PERCENT=80
+ExecStart=/opt/bt-player/scripts/cache_guard.sh

@@ -1,0 +1,29 @@
+[Unit]
+Description=BT-Player Backend Service
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=btplayer
+Group=btplayer
+WorkingDirectory=/opt/bt-player/src-tauri
+ExecStart=/opt/bt-player/src-tauri/target/release/bt-player
+Restart=on-failure
+RestartSec=3
+LimitNOFILE=65535
+
+Environment=RUST_LOG=bt_player=info,librqbit=info
+Environment=BT_PLAYER_STREAM_PORT=9527
+Environment=BT_PLAYER_API_PORT=9528
+Environment=BT_PLAYER_CACHE_DIR=/var/lib/btplayer/cache
+# 生产环境建议启用；值请改为强随机字符串
+# Environment=BT_PLAYER_API_TOKEN=REPLACE_WITH_STRONG_TOKEN
+
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ReadWritePaths=/var/lib/btplayer/cache /var/log/btplayer
+
+[Install]
+WantedBy=multi-user.target

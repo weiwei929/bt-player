@@ -5,6 +5,8 @@ bt_cache/
 .env*
 .env
 *.pdb
-Cargo.lock
+/Cargo.lock
+src-tauri/vendor/**/Cargo.lock
+src-tauri/local-patches/librqbit/Cargo.lock
 node_modules/
 dist/

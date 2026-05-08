@@ -12,7 +12,13 @@ bt.example.com {
     }
 
     reverse_proxy /api/* 127.0.0.1:9528
-    reverse_proxy /stream/* 127.0.0.1:9527
+
+    # 与生产保持一致：公网路径保留 /stream 前缀，转发前剥离
+    # 后端实际监听的是不带 /stream 的 rqbit HTTP API 路径。
+    handle /stream/* {
+        uri strip_prefix /stream
+        reverse_proxy 127.0.0.1:9527
+    }
 
     log {
         output file /var/log/caddy/bt-player-access.log

@@ -19,6 +19,8 @@
 - systemd 托管与重启策略（`/etc/systemd/system/bt-player.service`）
 
 对应验收记录见：`BT-Player VPS Phase 0 验收记录.md`
+  
+Phase 1 路线评估见：`BT-Player Phase 1 路线论证.md`
 
 ## 不在当前 Phase 的范围
 

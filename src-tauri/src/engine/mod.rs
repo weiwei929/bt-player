@@ -11,7 +11,7 @@ use librqbit::{
 };
 use serde::Serialize;
 use std::net::SocketAddr;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -101,7 +101,7 @@ impl TorrentEngine {
         info!("开始解析磁链");
 
         let session_clone = self.session.clone();
-        
+
         let response = match timeout(
             Duration::from_secs(60),
             session_clone.add_torrent(add, Some(AddTorrentOptions {
@@ -207,8 +207,40 @@ impl TorrentEngine {
             .and_then(|v| v.as_str())
             .ok_or_else(|| anyhow::anyhow!("文件索引不存在: {}", file_idx))?;
 
-        let full_path = Path::new(output_folder).join(file_name);
-        Ok(full_path)
+        // --- Path Hardening Start ---
+        if Path::new(output_folder).is_relative() {
+            anyhow::bail!("output_folder must be absolute for torrent {} file {}", torrent_id, file_idx);
+        }
+
+        for component in Path::new(file_name).components() {
+            match component {
+                Component::ParentDir | Component::RootDir | Component::Prefix(_) => {
+                    anyhow::bail!("invalid file_name component for torrent {} file {}", torrent_id, file_idx);
+                }
+                _ => {}
+            }
+        }
+
+        let canonical_folder = Path::new(output_folder)
+            .canonicalize()
+            .map_err(|e| anyhow::anyhow!("canonicalize output_folder failed: {}", e))?;
+
+        let full_path = canonical_folder.join(file_name);
+
+        let canonical_full = full_path.canonicalize().map_err(|e| {
+            anyhow::anyhow!("file not found or inaccessible: {}", e)
+        })?;
+
+        if !canonical_full.starts_with(&canonical_folder) {
+            anyhow::bail!("path traversal detected for torrent {} file {}", torrent_id, file_idx);
+        }
+
+        if !canonical_full.is_file() {
+            anyhow::bail!("not a regular file for torrent {} file {}", torrent_id, file_idx);
+        }
+
+        Ok(canonical_full)
+        // --- Path Hardening End ---
     }
 
     pub async fn get_file_tree(&self) -> Result<Vec<FileEntry>> {

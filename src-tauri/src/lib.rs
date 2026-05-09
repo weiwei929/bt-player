@@ -18,6 +18,7 @@ use axum::{
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
+use tracing::{info, warn};
 
 use engine::{FileEntry, TorrentEngine};
 use resolver::{MagnetResolver, M3u8Resolver, ResolverChain, WebPageResolver};
@@ -236,6 +237,64 @@ async fn handle_resolve(
     }
 }
 
+
+fn parse_range_header(range_str: &str, total_len: usize) -> Result<Option<(usize, usize)>, &'static str> {
+    if !range_str.starts_with("bytes=") {
+        return Err("invalid range unit, expected 'bytes'");
+    }
+    let spec = &range_str[6..];
+
+    if spec.contains(',') {
+        return Err("multi-range not supported");
+    }
+
+    let parts: Vec<&str> = spec.split('-').collect();
+    if parts.len() != 2 {
+        return Err("invalid range format");
+    }
+
+    let start_str = parts[0];
+    let end_str = parts[1];
+
+    if start_str.is_empty() && end_str.is_empty() {
+        return Err("invalid range format");
+    }
+
+    if start_str.is_empty() {
+        let suffix = end_str.parse::<usize>().map_err(|_| "invalid suffix number")?;
+        if suffix == 0 {
+            return Err("suffix range must be > 0");
+        }
+        if suffix >= total_len {
+            return Ok(Some((0, total_len - 1)));
+        }
+        let start = total_len - suffix;
+        return Ok(Some((start, total_len - 1)));
+    }
+
+    if end_str.is_empty() {
+        let start = start_str.parse::<usize>().map_err(|_| "invalid start number")?;
+        if start >= total_len {
+            return Err("range start >= file length");
+        }
+        return Ok(Some((start, total_len - 1)));
+    }
+
+    let start = start_str.parse::<usize>().map_err(|_| "invalid start number")?;
+    let end = end_str.parse::<usize>().map_err(|_| "invalid end number")?;
+
+    if start > end {
+        return Err("range start > end");
+    }
+    if start >= total_len {
+        return Err("range start >= file length");
+    }
+
+    let effective_end = std::cmp::min(end, total_len - 1);
+
+    Ok(Some((start, effective_end)))
+}
+
 async fn handle_local_stream(
     Path((torrent_id, file_idx)): Path<(usize, usize)>,
     State(state): State<AppState>,
@@ -272,12 +331,6 @@ async fn handle_local_stream(
         ));
     }
 
-    let range_header = req
-        .headers()
-        .get(header::RANGE)
-        .and_then(|h| h.to_str().ok())
-        .map(|s| s.to_string());
-
     let content_type = match file_path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase().as_str() {
         "mp4" => "video/mp4",
         "mkv" => "video/x-matroska",
@@ -287,45 +340,42 @@ async fn handle_local_stream(
         _ => "application/octet-stream",
     };
 
-    if let Some(range) = range_header {
-        if let Some(spec) = range.strip_prefix("bytes=") {
-            let mut parts = spec.split('-');
-            let start_opt = parts.next().and_then(|s| if s.is_empty() { None } else { s.parse::<usize>().ok() });
-            let end_opt = parts.next().and_then(|s| if s.is_empty() { None } else { s.parse::<usize>().ok() });
-            let (start, end) = match (start_opt, end_opt) {
-                (Some(start), Some(end)) if start <= end && end < total_len => (start, end),
-                (Some(start), None) if start < total_len => (start, total_len - 1),
-                (None, Some(suffix_len)) if suffix_len > 0 => {
-                    let len = suffix_len.min(total_len);
-                    (total_len - len, total_len - 1)
-                }
-                _ => {
-                    return Err((
-                        axum::http::StatusCode::RANGE_NOT_SATISFIABLE,
-                        Json(ErrorResponse {
-                            error: "Range 请求无效".into(),
-                        }),
-                    ))
-                }
-            };
-            let slice = data[start..=end].to_vec();
-            let content_range = format!("bytes {}-{}/{}", start, end, total_len);
-            return Response::builder()
-                .status(StatusCode::PARTIAL_CONTENT)
-                .header(header::ACCEPT_RANGES, "bytes")
-                .header(header::CONTENT_TYPE, content_type)
-                .header(header::CONTENT_LENGTH, slice.len().to_string())
-                .header(header::CONTENT_RANGE, content_range)
-                .body(Body::from(slice))
-                .map_err(|e| {
-                    (
-                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
-                        Json(ErrorResponse {
-                            error: format!("构建响应失败: {}", e),
-                        }),
-                    )
-                });
+    let range_header = req.headers().get(header::RANGE).and_then(|v| v.to_str().ok());
+
+    if let Some(range_str) = range_header {
+        match parse_range_header(range_str, total_len) {
+            Ok(Some((start, end))) => {
+                info!("local stream range: torrent={}, idx={}, range={}-{}, total={}", torrent_id, file_idx, start, end, total_len);
+                let slice = &data[start..=end];
+                let content_range = format!("bytes {}-{}/{}", start, end, total_len);
+                return Response::builder()
+                    .status(StatusCode::PARTIAL_CONTENT)
+                    .header(header::ACCEPT_RANGES, "bytes")
+                    .header(header::CONTENT_TYPE, content_type)
+                    .header(header::CONTENT_LENGTH, slice.len().to_string())
+                    .header(header::CONTENT_RANGE, content_range)
+                    .body(Body::from(slice.to_vec()))
+                    .map_err(|e| {
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse { error: format!("build response failed: {}", e) }))
+                    });
+            },
+            Ok(None) => {
+                info!("local stream full: torrent={}, idx={}, total={}", torrent_id, file_idx, total_len);
+            },
+            Err(e) => {
+                warn!("local stream bad range: torrent={}, idx={}, error={}", torrent_id, file_idx, e);
+                return Response::builder()
+                    .status(StatusCode::RANGE_NOT_SATISFIABLE)
+                    .header(header::CONTENT_RANGE, format!("bytes */{}", total_len))
+                    .header(header::ACCEPT_RANGES, "bytes")
+                    .body(Body::empty())
+                    .map_err(|e| {
+                        (StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse { error: format!("build response failed: {}", e) }))
+                    });
+            }
         }
+    } else {
+        info!("local stream full: torrent={}, idx={}, total={}", torrent_id, file_idx, total_len);
     }
 
     Response::builder()

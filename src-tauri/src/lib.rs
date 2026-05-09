@@ -194,7 +194,7 @@ async fn handle_resolve(
                     (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse { error: e.to_string() }))
                 })?;
                 for file in &mut files {
-                    file.stream_url = format!("/stream/torrents/{}/stream/{}", torrent_id, file.index);
+                    file.stream_url = format!("/api/local-stream/{}/{}", torrent_id, file.index);
                 }
                 let default_file_index = files
                     .iter()
@@ -203,7 +203,7 @@ async fn handle_resolve(
                     .map(|f| f.index)
                     .unwrap_or(0);
                 Ok(Json(ResolveResponse {
-                    stream_url: format!("/stream/torrents/{}/stream/{}", torrent_id, default_file_index),
+                    stream_url: format!("/api/local-stream/{}/{}", torrent_id, default_file_index),
                     files,
                     source_type: "magnet".into(),
                 }))

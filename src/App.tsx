@@ -20,14 +20,32 @@ interface PlayHistoryEntry {
 }
 
 const API_BASE = "";  // 同域下，Caddy 反向代理 /api/*
-const API_TOKEN = (import.meta.env.VITE_API_TOKEN as string | undefined)?.trim();
+
+class ApiRequestError extends Error {
+  status: number;
+  rawMessage: string;
+
+  constructor(status: number, message: string, rawMessage: string) {
+    super(message);
+    this.status = status;
+    this.rawMessage = rawMessage;
+  }
+}
+
+function mapApiErrorMessage(status: number, rawMessage: string): string {
+  const msg = (rawMessage || "").trim();
+  if (status === 401) return "未授权，请先登录/认证";
+  if (status === 500) return "服务异常";
+  if (status === 504 || msg.includes("超时") || msg.toLowerCase().includes("timeout")) {
+    return "资源较冷，暂时解析超时";
+  }
+  if (status === 400 || status === 404) return "链接无效";
+  return msg || "服务异常";
+}
 
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const headers = new Headers(options?.headers ?? {});
   headers.set("Content-Type", "application/json");
-  if (API_TOKEN) {
-    headers.set("x-api-key", API_TOKEN);
-  }
 
   const res = await fetch(`${API_BASE}${path}`, {
     headers,
@@ -35,7 +53,8 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({ error: res.statusText }));
-    throw new Error(err.error || "请求失败");
+    const rawMessage = err.error || res.statusText || "请求失败";
+    throw new ApiRequestError(res.status, mapApiErrorMessage(res.status, rawMessage), rawMessage);
   }
   return res.json();
 }
@@ -79,7 +98,11 @@ function App() {
       setFiles(result.files);
       setSourceType(result.source_type as "magnet" | "hls");
     } catch (e: any) {
-      setError(e.message);
+      if (e instanceof ApiRequestError) {
+        setError(e.message);
+      } else {
+        setError("服务异常");
+      }
     } finally {
       setLoading(false);
     }

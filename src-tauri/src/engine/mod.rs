@@ -11,7 +11,7 @@ use librqbit::{
 };
 use serde::Serialize;
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::{info, warn};
@@ -168,6 +168,47 @@ impl TorrentEngine {
         }
 
         Ok(entries)
+    }
+
+    pub async fn get_local_file_path_by_id_and_index(&self, torrent_id: usize, file_idx: usize) -> Result<PathBuf> {
+        let client = Self::build_local_client()?;
+
+        let list_url = self.stream_base_url.join("torrents")?;
+        let list_res = client.get(list_url).send().await.context("请求 torrents 列表失败")?;
+        if !list_res.status().is_success() {
+            anyhow::bail!("获取 torrents 列表失败: {}", list_res.status());
+        }
+        let list_body: serde_json::Value = list_res.json().await.context("解析 torrents 列表失败")?;
+        let torrents = list_body
+            .get("torrents")
+            .and_then(|t| t.as_array())
+            .cloned()
+            .unwrap_or_default();
+        let output_folder = torrents
+            .iter()
+            .find(|t| t.get("id").and_then(|v| v.as_u64()) == Some(torrent_id as u64))
+            .and_then(|t| t.get("output_folder").and_then(|v| v.as_str()))
+            .ok_or_else(|| anyhow::anyhow!("未找到 torrent 输出目录: {}", torrent_id))?;
+
+        let detail_url = self.stream_base_url.join(&format!("torrents/{}", torrent_id))?;
+        let detail_res = client.get(detail_url).send().await.context("请求详情失败")?;
+        if !detail_res.status().is_success() {
+            anyhow::bail!("获取详情失败: {}", detail_res.status());
+        }
+        let detail: serde_json::Value = detail_res.json().await.context("解析详情失败")?;
+        let files = detail
+            .get("files")
+            .and_then(|f| f.as_array())
+            .ok_or_else(|| anyhow::anyhow!("torrent 文件列表为空"))?;
+
+        let file_name = files
+            .get(file_idx)
+            .and_then(|f| f.get("name"))
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow::anyhow!("文件索引不存在: {}", file_idx))?;
+
+        let full_path = Path::new(output_folder).join(file_name);
+        Ok(full_path)
     }
 
     pub async fn get_file_tree(&self) -> Result<Vec<FileEntry>> {

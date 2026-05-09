@@ -10,10 +10,11 @@ use std::sync::{Arc, Mutex};
 
 use axum::{
     body::Body,
-    extract::State,
-    http::{Request, StatusCode},
+    extract::{Path, State},
+    http::{header, Request, StatusCode},
     middleware::{self, Next},
     routing::{get, post},
+    response::Response,
     Json, Router,
 };
 use serde::{Deserialize, Serialize};
@@ -66,6 +67,7 @@ pub fn create_app(engine: Arc<TorrentEngine>, db: DbState, api_token: Option<Str
     let api_router = Router::new()
         .route("/resolve", post(handle_resolve))
         .route("/torrents", get(handle_file_tree))
+        .route("/local-stream/{torrent_id}/{file_idx}", get(handle_local_stream))
         .route("/history", get(handle_get_history).post(handle_save_record))
         // 云端导出是后续“缓存/归档/冷门兜底”层的占位接口，
         // 本 Phase 仅记录任务与状态，不接入任何实时播放依赖。
@@ -187,11 +189,20 @@ async fn handle_resolve(
                     Json(ErrorResponse { error: "无法从 stream_url 提取 torrent_id".into() }),
                 ))?;
 
-                let files = state.engine.get_file_tree_by_id(torrent_id).await.map_err(|e| {
+                let mut files = state.engine.get_file_tree_by_id(torrent_id).await.map_err(|e| {
                     (axum::http::StatusCode::INTERNAL_SERVER_ERROR, Json(ErrorResponse { error: e.to_string() }))
                 })?;
+                for file in &mut files {
+                    file.stream_url = format!("/stream/torrents/{}/stream/{}", torrent_id, file.index);
+                }
+                let default_file_index = files
+                    .iter()
+                    .filter(|f| !f.is_suspected_ad)
+                    .max_by_key(|f| f.size_bytes)
+                    .map(|f| f.index)
+                    .unwrap_or(0);
                 Ok(Json(ResolveResponse {
-                    stream_url,
+                    stream_url: format!("/stream/torrents/{}/stream/{}", torrent_id, default_file_index),
                     files,
                     source_type: "magnet".into(),
                 }))
@@ -223,6 +234,114 @@ async fn handle_resolve(
             Json(ErrorResponse { error: reason }),
         )),
     }
+}
+
+async fn handle_local_stream(
+    Path((torrent_id, file_idx)): Path<(usize, usize)>,
+    State(state): State<AppState>,
+    req: Request<Body>,
+) -> Result<Response, (axum::http::StatusCode, Json<ErrorResponse>)> {
+    let file_path = state
+        .engine
+        .get_local_file_path_by_id_and_index(torrent_id, file_idx)
+        .await
+        .map_err(|e| {
+            (
+                axum::http::StatusCode::NOT_FOUND,
+                Json(ErrorResponse {
+                    error: format!("本地文件不存在: {}", e),
+                }),
+            )
+        })?;
+
+    let data = tokio::fs::read(&file_path).await.map_err(|e| {
+        (
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: format!("读取文件失败: {}", e),
+            }),
+        )
+    })?;
+    let total_len = data.len();
+    if total_len == 0 {
+        return Err((
+            axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+            Json(ErrorResponse {
+                error: "文件为空".into(),
+            }),
+        ));
+    }
+
+    let range_header = req
+        .headers()
+        .get(header::RANGE)
+        .and_then(|h| h.to_str().ok())
+        .map(|s| s.to_string());
+
+    let content_type = match file_path.extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase().as_str() {
+        "mp4" => "video/mp4",
+        "mkv" => "video/x-matroska",
+        "webm" => "video/webm",
+        "avi" => "video/x-msvideo",
+        "mov" => "video/quicktime",
+        _ => "application/octet-stream",
+    };
+
+    if let Some(range) = range_header {
+        if let Some(spec) = range.strip_prefix("bytes=") {
+            let mut parts = spec.split('-');
+            let start_opt = parts.next().and_then(|s| if s.is_empty() { None } else { s.parse::<usize>().ok() });
+            let end_opt = parts.next().and_then(|s| if s.is_empty() { None } else { s.parse::<usize>().ok() });
+            let (start, end) = match (start_opt, end_opt) {
+                (Some(start), Some(end)) if start <= end && end < total_len => (start, end),
+                (Some(start), None) if start < total_len => (start, total_len - 1),
+                (None, Some(suffix_len)) if suffix_len > 0 => {
+                    let len = suffix_len.min(total_len);
+                    (total_len - len, total_len - 1)
+                }
+                _ => {
+                    return Err((
+                        axum::http::StatusCode::RANGE_NOT_SATISFIABLE,
+                        Json(ErrorResponse {
+                            error: "Range 请求无效".into(),
+                        }),
+                    ))
+                }
+            };
+            let slice = data[start..=end].to_vec();
+            let content_range = format!("bytes {}-{}/{}", start, end, total_len);
+            return Response::builder()
+                .status(StatusCode::PARTIAL_CONTENT)
+                .header(header::ACCEPT_RANGES, "bytes")
+                .header(header::CONTENT_TYPE, content_type)
+                .header(header::CONTENT_LENGTH, slice.len().to_string())
+                .header(header::CONTENT_RANGE, content_range)
+                .body(Body::from(slice))
+                .map_err(|e| {
+                    (
+                        axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                        Json(ErrorResponse {
+                            error: format!("构建响应失败: {}", e),
+                        }),
+                    )
+                });
+        }
+    }
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header(header::ACCEPT_RANGES, "bytes")
+        .header(header::CONTENT_TYPE, content_type)
+        .header(header::CONTENT_LENGTH, total_len.to_string())
+        .body(Body::from(data))
+        .map_err(|e| {
+            (
+                axum::http::StatusCode::INTERNAL_SERVER_ERROR,
+                Json(ErrorResponse {
+                    error: format!("构建响应失败: {}", e),
+                }),
+            )
+        })
 }
 
 async fn handle_file_tree(

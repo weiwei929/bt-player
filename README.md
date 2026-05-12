@@ -6,8 +6,8 @@
 
 - **事实源优先级**：
   1. VPS 实际运行状态（systemd/Caddy/网络与日志）
-  2. `BT-Player VPS Phase 0 验收记录.md`
-  3. `UPGRADE_IMPLEMENTATION_GUIDE.md`
+  2. `docs/vps/BT-Player VPS Phase 0 验收记录.md`
+  3. `docs/design/UPGRADE_IMPLEMENTATION_GUIDE.md`
 - **历史说明**：本地旧 Tauri 项目形态仅作为历史原型参考，不作为当前生产事实源。
 
 ## Phase 0 已完成（生产基线）
@@ -18,9 +18,9 @@
 - `cache_guard` 最低磁盘保护（service + timer）
 - systemd 托管与重启策略（`/etc/systemd/system/bt-player.service`）
 
-对应验收记录见：`BT-Player VPS Phase 0 验收记录.md`
-  
-Phase 1 路线评估见：`BT-Player Phase 1 路线论证.md`
+对应验收记录见：`docs/vps/BT-Player VPS Phase 0 验收记录.md`
+
+Phase 1 路线评估见：`docs/vps/BT-Player Phase 1 路线论证.md`
 
 ## 不在当前 Phase 的范围
 

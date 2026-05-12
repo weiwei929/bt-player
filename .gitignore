@@ -10,3 +10,6 @@ src-tauri/vendor/**/Cargo.lock
 src-tauri/local-patches/librqbit/Cargo.lock
 node_modules/
 dist/
+# VPS backups and archives
+*.tgz
+puresource-playlist.backup*/

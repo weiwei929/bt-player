@@ -1,0 +1,28 @@
+[
+  {
+    "id": "adece416-6b2d-432f-8faf-4f5979657517",
+    "title": "本地验证样例",
+    "source_url": "https://example.com/video.mp4",
+    "source_kind": "mp4",
+    "stream_url": "https://example.com/video.mp4",
+    "stage": "external_ready",
+    "status": "external_ready",
+    "note": "local smoke test",
+    "last_probed_at": null,
+    "probe_log": [],
+    "created_at": "2026-05-11T05:29:42.780496+00:00"
+  },
+  {
+    "id": "8d6fb5a6-4776-47e0-8e14-29da9e1db233",
+    "title": "https://bt.mgtv.dev/Cosmos_Laundromat.faststart.mp4",
+    "source_url": "https://bt.mgtv.dev/Cosmos_Laundromat.faststart.mp4",
+    "source_kind": "mp4",
+    "stream_url": null,
+    "stage": "pending",
+    "status": null,
+    "note": null,
+    "last_probed_at": null,
+    "probe_log": [],
+    "created_at": "2026-05-11T07:39:38.530201+00:00"
+  }
+]

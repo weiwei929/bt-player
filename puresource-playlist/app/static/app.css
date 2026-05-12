@@ -102,6 +102,9 @@ button.warn { color: var(--warn); }
 }
 .badge.pending { background: #2a2f3a; color: var(--muted); }
 .badge.probing { background: rgba(56, 189, 248, 0.15); color: var(--probing); }
+.badge.extracting { background: rgba(56, 189, 248, 0.15); color: var(--probing); }
+.badge.bt_probing { background: rgba(56, 189, 248, 0.15); color: var(--probing); }
+.badge.metadata_ready { background: rgba(250, 204, 21, 0.15); color: var(--warn); }
 .badge.playable { background: rgba(74, 222, 128, 0.15); color: var(--ok); }
 .badge.external_ready { background: rgba(74, 222, 128, 0.25); color: var(--ok); }
 .badge.failed { background: rgba(248, 113, 113, 0.15); color: var(--err); }
@@ -119,6 +122,70 @@ button.warn { color: var(--warn); }
 .magnet-info .urls { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; margin-top: 4px; }
 .magnet-info .urls .label { color: var(--muted); }
 .magnet-info code { background: #060810; padding: 1px 4px; border-radius: 3px; }
+
+/* === bt-probe 文件树（v0.3 T-3） === */
+.bt-probe {
+  margin-top: 6px; padding: 6px 8px; border-radius: 4px;
+  border-top: 1px dashed var(--border);
+}
+.bt-probe .row1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.bt-probe .label {
+  font-weight: 600; color: var(--probing); letter-spacing: 0.04em;
+}
+.bt-probe details { margin-top: 4px; }
+.bt-probe summary { cursor: pointer; color: var(--muted); font-size: 12px; }
+.bt-probe .note { margin: 6px 0 0; font-style: italic; }
+table.bt-files {
+  width: 100%; border-collapse: collapse; font-size: 12px; margin-top: 6px;
+}
+table.bt-files th, table.bt-files td {
+  border-bottom: 1px solid var(--border); padding: 4px 6px; text-align: left;
+}
+table.bt-files th { color: var(--muted); font-weight: 500; }
+table.bt-files td.path { font-family: ui-monospace, monospace; word-break: break-all; }
+table.bt-files td.size { white-space: nowrap; color: var(--muted); width: 80px; }
+table.bt-files td.tag { width: 50px; }
+table.bt-files tr.main td.path { color: var(--ok); font-weight: 600; }
+table.bt-files tr.main td.size { color: var(--ok); }
+.main-tag {
+  display: inline-block; padding: 0 6px; border-radius: 3px;
+  background: rgba(74, 222, 128, 0.2); color: var(--ok);
+  font-size: 10px; font-weight: 600; letter-spacing: 0.03em;
+}
+
+/* === yt-dlp 候选（v0.3 T-3） === */
+.extract {
+  margin-top: 4px; padding: 8px 10px; border-radius: 6px;
+  background: #07090f; border: 1px dashed var(--border);
+}
+.extract .row1 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.extract .label {
+  font-weight: 600; color: var(--probing); letter-spacing: 0.04em;
+}
+.cand-list { list-style: decimal inside; margin: 6px 0 0; padding: 0; }
+.cand-list .cand {
+  margin: 4px 0; padding: 6px 8px; border-radius: 4px;
+  border: 1px solid var(--border); background: #0b0d12;
+}
+.cand-list .cand .row1 { gap: 6px; }
+.cand-list .cand .cand-title { font-weight: 600; }
+.cand-list .cand .urls { font-family: ui-monospace, monospace; font-size: 12px; word-break: break-all; margin-top: 4px; }
+.cand-list .cand .urls .label { color: var(--muted); }
+.cand-list .cand code { background: #060810; padding: 1px 4px; border-radius: 3px; }
+.cand-list .cand .actions { margin-top: 6px; }
+
+/* === in-flight 任务的"心跳"提示（v0.3 T-3 自动轮询配套） === */
+.task.in-flight {
+  border-color: var(--probing);
+  box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.15);
+}
+.task.in-flight .badge {
+  animation: pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.55; }
+}
 
 dialog {
   background: var(--panel); color: var(--fg);

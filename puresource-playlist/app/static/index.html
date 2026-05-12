@@ -21,9 +21,12 @@
   <section class="card">
     <h2>提交新链接</h2>
     <p class="muted small">
-      支持 mp4 / m3u8 直链、网页 URL、magnet（网页 URL 第一版仅登记）。<br />
-      提交后默认 <code>stage=pending</code>；mp4 / m3u8 可点 <em>probe</em> 自动判定，magnet 可点
-      <em>enrich</em> 做<strong>纯字符串</strong>解析（info_hash / dn / trackers，零网络、零 BT 协议）。
+      支持 mp4 / m3u8 直链、网页 URL、magnet。提交后默认 <code>stage=pending</code>。<br />
+      四种探针按 source_kind 分发：mp4/m3u8 用 <em>probe</em>（同步 HTTP 探活）；
+      magnet 用 <em>enrich</em>（纯字符串解析，零网络）+ <em>bt-probe</em>（异步拉
+      qBittorrent metadata + 文件树）；webpage 用 <em>extract</em>（异步 yt-dlp 抽候选）。<br />
+      <code>extracting</code> / <code>bt_probing</code> 状态会自动每 5 秒轮询刷新；
+      <strong>promote</strong> 仍是把资源推进 PotPlayer 列表的<strong>唯一</strong>入口。
     </p>
     <form id="form-create" class="form-grid">
       <label>
@@ -51,7 +54,10 @@
     <div id="stage-tabs" class="tabs">
       <button data-stage="" class="active" type="button">全部</button>
       <button data-stage="pending" type="button">pending</button>
+      <button data-stage="extracting" type="button">extracting</button>
+      <button data-stage="bt_probing" type="button">bt_probing</button>
       <button data-stage="probing" type="button">probing</button>
+      <button data-stage="metadata_ready" type="button">metadata_ready</button>
       <button data-stage="playable" type="button">playable</button>
       <button data-stage="external_ready" type="button">external_ready</button>
       <button data-stage="failed" type="button">failed</button>
@@ -91,7 +97,7 @@
   </dialog>
 
   <footer class="footer muted small">
-    puresource-playlist · v0.3 · magnet info 富化 PoC（1a，仅 URI 解析）<br />
+    puresource-playlist · v0.3 · 资源探测工作台（yt-dlp + qBittorrent 双刀）<br />
     工作台不保存 Basic Auth 凭据。生产部署后请通过浏览器自身的 401 弹窗或操作系统钥匙串完成认证。
   </footer>
 

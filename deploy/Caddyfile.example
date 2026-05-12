@@ -1,27 +1,93 @@
-bt.example.com {
-    encode gzip
+# puresource-playlist · Caddy 反代模板（v0.3 / v0.4a）
+#
+# 这是仓库内的 single source of truth；任何 /etc/caddy/Caddyfile 的变更都应
+# 先反映到这里，再 rsync / 手抄到 VPS 后 `caddy validate` → reload。
+#
+# 占位符（部署时必须替换为真实值）：
+#   __BASIC_AUTH_BCRYPT__   admin 用户的 bcrypt 哈希（`caddy hash-password` 生成）
+#   __API_KEY__             /api/* 后端要求的 x-api-key（与 hermes/9528 协商）
+#
+# 顶部 `admin off`：禁用 localhost:2019 admin API，理由是公网 VPS 上零信任原则。
+# 副作用：`caddy reload` 走 admin API 在此模式下会失败，热 reload 不可用。
+# 部署时改用 `systemctl restart caddy`（短暂断流数秒）。
 
-    # 静态前端（按实际构建产物目录调整）
-    root * /opt/bt-player/dist
-    file_server
+{
+	admin off
+	log {
+		output discard
+	}
+}
 
-    # 建议使用 caddy hash-password 生成
-    @protected path /api/* /stream/*
-    basic_auth @protected {
-        admin REPLACE_WITH_BCRYPT_HASH
-    }
+hermes.mgtv.dev {
+	reverse_proxy 127.0.0.1:8787
+}
 
-    reverse_proxy /api/* 127.0.0.1:9528
+bt.mgtv.dev {
+	encode gzip
 
-    # 与生产保持一致：公网路径保留 /stream 前缀，转发前剥离
-    # 后端实际监听的是不带 /stream 的 rqbit HTTP API 路径。
-    handle /stream/* {
-        uri strip_prefix /stream
-        reverse_proxy 127.0.0.1:9527
-    }
+	# puresource-playlist @127.0.0.1:8090
+	# - /playlists/potplayer/* 公网可读（PotPlayer 订阅，无 Basic Auth）
+	# - /intake、/resources、/tasks、/tasks/* 需 Basic Auth
+	# - /internal/*               显式 403（v0.4a 新增；worker / btprobe callback 私有端点）
+	# - /health 公网可读（仅 {"status":"ok"}，便于外部探活）
+	# - 其他 /playlists/*         显式 403，避免落入 SPA try_files
 
-    log {
-        output file /var/log/caddy/bt-player-access.log
-        format json
-    }
+	# === v0.4a 新增：/internal/* 一律 403（worker callback 仅 127.0.0.1） ===
+	# 主服务代码层已有 localhost 校验作兜底（见 puresource-playlist/app/main.py
+	# `extract_result` / `bt_probe_result` 的 request.client.host 判断）。这条
+	# Caddy 规则是纵深防御的第一道——即使代码层校验出 bug，外部也无法到达。
+	@pure_internal path /internal /internal/*
+	handle @pure_internal {
+		respond "internal endpoint" 403
+	}
+
+	@pure_pot path /playlists/potplayer/*
+	handle @pure_pot {
+		reverse_proxy 127.0.0.1:8090
+	}
+
+	@pure_playlists_other {
+		path /playlists/*
+		not path /playlists/potplayer/*
+	}
+	handle @pure_playlists_other {
+		respond "Forbidden" 403
+	}
+
+	@pure_private path /intake /resources /tasks /tasks/*
+	basic_auth @pure_private {
+		admin __BASIC_AUTH_BCRYPT__
+	}
+	handle @pure_private {
+		reverse_proxy 127.0.0.1:8090
+	}
+
+	@pure_health path /health
+	handle @pure_health {
+		reverse_proxy 127.0.0.1:8090
+	}
+
+	@api path /api/* /api
+	basic_auth @api {
+		admin __BASIC_AUTH_BCRYPT__
+	}
+	handle @api {
+		reverse_proxy 127.0.0.1:9528 {
+			header_up x-api-key __API_KEY__
+		}
+	}
+
+	@stream path /stream/* /stream
+	handle @stream {
+		uri strip_prefix /stream
+		reverse_proxy 127.0.0.1:9527 {
+			flush_interval -1
+		}
+	}
+
+	handle {
+		root * /var/www/bt-player
+		try_files {path} /index.html
+		file_server
+	}
 }
